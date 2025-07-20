@@ -1,4 +1,4 @@
-PACKAGES:='stream'
+PACKAGES := `./script/lsgomod.sh`
 
 test:
     #!/usr/bin/env bash
@@ -6,7 +6,7 @@ test:
     for pkg in {{PACKAGES}}; do
         echo "Testing package: $pkg"
         # 假设有一个测试命令
-        cd $pkg && go test ./...
+        cd $pkg && go test ./... -v
     done
 
 lint:

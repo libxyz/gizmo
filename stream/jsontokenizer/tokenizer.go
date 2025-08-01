@@ -1,4 +1,4 @@
-// Package jsonparser provides a low-memory, character-by-character JSON parser
+// Package jsontokenizer provides a low-memory, character-by-character JSON parser
 // that generates detailed parsing events with JSON path tracking.
 package jsontokenizer
 

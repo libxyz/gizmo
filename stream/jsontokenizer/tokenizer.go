@@ -24,7 +24,7 @@ const (
 // TokenType 表示解析过程中发生的事件类型
 type TokenType int
 
-// 定义各种事件类型
+// 定义各种TokenType
 const (
 	TokenUnknown      TokenType = iota // 未知事件类型
 	TokenString                        // 字符串内容字符

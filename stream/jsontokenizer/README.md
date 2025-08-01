@@ -18,11 +18,12 @@ package main
 import (
     "fmt"
     "strings"
+    "github.com/Crescent617/x/stream/jsontokenizer"
 )
 
 func main() {
     // 创建解析器
-    parser := NewParser()
+    t := jsontokenizer.NewTokenizer()
     
     // JSON输入
     jsonInput := `{"name":"张三","age":25,"items":[1,2,3]}`
@@ -31,10 +32,10 @@ func main() {
     acc := strings.Builder{}
     
     for _, r := range jsonInput {
-        event := parser.Push(r)
-        if event != nil && event.Path == "$.name" && 
-           (event.Type == EventString || event.Type == EventStringEscape) {
-            acc.WriteRune(event.Char)
+        tk := t.Push(r)
+        if tk != nil && tk.Path == "$.name" && 
+           (tk.Type == jsontokenizer.TokenString || tk.Type == jsontokenizer.TokenStringEscape) {
+            acc.WriteString(tk.Val)
         }
     }
     
@@ -42,27 +43,27 @@ func main() {
 }
 ```
 
-## 事件类型
+## Token类型
 
-解析器为每个字符生成以下类型的事件：
+解析器为每个字符生成以下类型的Token：
 
-| 事件类型 | 描述 | 示例 |
+| Token类型 | 描述 | 示例 |
 |---------|------|------|
-| `EventString` | 字符串内容字符 | `"hello"` 中的 `h` |
-| `EventStringEscape` | 转义字符 | `"\n"` 中的 `\` |
-| `EventNumber` | 数字字符 | `42.5` 中的 `4`、`2`、`.`、`5` |
-| `EventBoolean` | 布尔值字符 | `true` 中的 `t`、`r`、`u`、`e` |
-| `EventNull` | null值字符 | `null` 中的每个字符 |
-| `EventObjectStart` | 对象开始 | `{` |
-| `EventObjectEnd` | 对象结束 | `}` |
-| `EventArrayStart` | 数组开始 | `[` |
-| `EventArrayEnd` | 数组结束 | `]` |
-| `EventKey` | 键名字符 | `{"key":1}` 中的 `k`、`e`、`y` |
-| `EventKeyEscape` | 键名转义字符 | `{"k\ey":1}` 中的 `\` |
-| `EventComma` | 逗号分隔符 | `,` |
-| `EventColon` | 冒号分隔符 | `:` |
-| `EventQuote` | 引号 | `"` |
-| `EventWhitespace` | 空白字符 | 空格、制表符、换行符等 |
+| `jsontokenizer.TokenString` | 字符串内容字符 | `"hello"` 中的 `h` |
+| `jsontokenizer.TokenStringEscape` | 转义字符 | `"\n"` 中的 `\` |
+| `jsontokenizer.TokenNumber` | 数字字符 | `42.5` 中的 `4`、`2`、`.`、`5` |
+| `jsontokenizer.TokenBoolean` | 布尔值字符 | `true` 中的 `t`、`r`、`u`、`e` |
+| `jsontokenizer.TokenNull` | null值字符 | `null` 中的每个字符 |
+| `jsontokenizer.TokenObjectStart` | 对象开始 | `{` |
+| `jsontokenizer.TokenObjectEnd` | 对象结束 | `}` |
+| `jsontokenizer.TokenArrayStart` | 数组开始 | `[` |
+| `jsontokenizer.TokenArrayEnd` | 数组结束 | `]` |
+| `jsontokenizer.TokenKey` | 键名字符 | `{"key":1}` 中的 `k`、`e`、`y` |
+| `jsontokenizer.TokenKeyEscape` | 键名转义字符 | `{"k\ey":1}` 中的 `\` |
+| `jsontokenizer.TokenComma` | 逗号分隔符 | `,` |
+| `jsontokenizer.TokenColon` | 冒号分隔符 | `:` |
+| `jsontokenizer.TokenQuote` | 引号 | `"` |
+| `jsontokenizer.TokenWhitespace` | 空白字符 | 空格、制表符、换行符等 |
 
 ## JSON路径格式
 
@@ -78,13 +79,15 @@ func main() {
 ### 基本对象解析
 
 ```go
+import "github.com/Crescent617/x/stream/jsontokenizer"
+
 json := `{"name":"张三","age":30,"active":true}`
-parser := NewParser()
+t := jsontokenizer.NewTokenizer()
 
 for _, r := range json {
-    if event := parser.Push(r); event != nil {
-        fmt.Printf("字符: %c, 类型: %d, 路径: %s\n", 
-                  event.Char, event.Type, event.Path)
+    if tk := t.Push(r); tk != nil {
+        fmt.Printf("字符: %s, 类型: %d, 路径: %s\n", 
+                  tk.Val, tk.Type, tk.Path)
     }
 }
 ```
@@ -92,13 +95,15 @@ for _, r := range json {
 ### 数组处理
 
 ```go
+import "github.com/Crescent617/x/stream/jsontokenizer"
+
 json := `[1,2,3,{"name":"测试"}]`
-parser := NewParser()
+t := jsontokenizer.NewTokenizer()
 
 for _, r := range json {
-    if event := parser.Push(r); event != nil {
-        if event.Path == "$[3].name" && event.Type == EventString {
-            fmt.Printf("找到名称: %c\n", event.Char)
+    if tk := t.Push(r); tk != nil {
+        if tk.Path == "$[3].name" && tk.Type == jsontokenizer.TokenString {
+            fmt.Printf("找到名称: %s\n", tk.Val)
         }
     }
 }
@@ -108,14 +113,14 @@ for _, r := range json {
 
 ```go
 json := `{"users":[{"id":1,"profile":{"name":"张三"}}]}`
-parser := NewParser()
+t := jsontokenizer.NewTokenizer()
 
 nameBuilder := strings.Builder{}
 for _, r := range json {
-    if event := parser.Push(r); event != nil {
-        if event.Path == "$.users[0].profile.name" && 
-           (event.Type == EventString || event.Type == EventStringEscape) {
-            nameBuilder.WriteRune(event.Char)
+    if tk := t.Push(r); tk != nil {
+        if tk.Path == "$.users[0].profile.name" && 
+           (tk.Type == jsontokenizer.TokenString || tk.Type == jsontokenizer.TokenStringEscape) {
+            nameBuilder.WriteString(tk.Val)
         }
     }
 }

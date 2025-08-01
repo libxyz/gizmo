@@ -8,7 +8,7 @@ This is a Go workspace containing a streaming JSON parser library. The core func
 
 ## Architecture
 
-**Main Package**: `github.com/Crescent617/x/stream/jsonparser`
+**Main Package**: `github.com/Crescent617/x/stream/jsontokenizer`
 - **State Machine Design**: Uses a finite state machine (`State` enum) to process JSON character by character
 - **Event System**: Generates detailed events for each character with JSON path tracking (JSON Pointer format)
 - **Container Stack**: Tracks nested structures (objects/arrays) using a container stack
@@ -38,7 +38,7 @@ cd stream && go test ./...
 cd stream && golangci-lint run
 
 # Run specific test
-cd stream && go test -v ./jsonparser -run TestParser_Simple
+cd stream && go test -v ./jsontokenizer -run TestParser_Simple
 
 # Run all tests with coverage
 cd stream && go test -cover ./...
@@ -68,4 +68,4 @@ Tests are comprehensive and include:
 - Key/value escape sequences
 - Path tracking accuracy
 
-Test files: `stream/jsonparser/parser_test.go`
+Test files: `stream/jsontokenizer/parser_test.go`

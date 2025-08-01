@@ -1,6 +1,6 @@
 // Package jsonparser provides a low-memory, character-by-character JSON parser
 // that generates detailed parsing events with JSON path tracking.
-package jsonparser
+package jsontokenizer
 
 import (
 	"fmt"
@@ -8,12 +8,12 @@ import (
 	"strings"
 )
 
-// State 表示解析器的当前状态
-type State int
+// state 表示解析器的当前状态
+type state int
 
 // 定义解析器的各种状态
 const (
-	stateIdle    State = iota // 空闲状态，等待新的值
+	stateIdle    state = iota // 空闲状态，等待新的值
 	stateString               // 处理字符串值
 	stateNumber               // 处理数字值
 	stateBoolean              // 处理布尔值
@@ -21,27 +21,27 @@ const (
 	stateKey                  // 处理对象键名
 )
 
-// EventType 表示解析过程中发生的事件类型
-type EventType int
+// TokenType 表示解析过程中发生的事件类型
+type TokenType int
 
 // 定义各种事件类型
 const (
-	EventUnknown      EventType = iota // 未知事件类型
-	EventString                        // 字符串内容字符
-	EventStringEscape                  // 字符串中的转义字符
-	EventNumber                        // 数字字符
-	EventBoolean                       // 布尔值字符
-	EventNull                          // null值字符
-	EventObjectStart                   // 对象开始 '{'
-	EventObjectEnd                     // 对象结束 '}'
-	EventArrayStart                    // 数组开始 '['
-	EventArrayEnd                      // 数组结束 ']'
-	EventKey                           // 对象键名字符
-	EventKeyEscape                     // 键名中的转义字符
-	EventComma                         // 逗号分隔符 ','
-	EventColon                         // 冒号分隔符 ':'
-	EventQuote                         // 引号 '"'
-	EventWhitespace                    // 空白字符
+	TokenUnknown      TokenType = iota // 未知事件类型
+	TokenString                        // 字符串内容字符
+	TokenStringEscape                  // 字符串中的转义字符
+	TokenNumber                        // 数字字符
+	TokenBoolean                       // 布尔值字符
+	TokenNull                          // null值字符
+	TokenObjectStart                   // 对象开始 '{'
+	TokenObjectEnd                     // 对象结束 '}'
+	TokenArrayStart                    // 数组开始 '['
+	TokenArrayEnd                      // 数组结束 ']'
+	TokenKey                           // 对象键名字符
+	TokenKeyEscape                     // 键名中的转义字符
+	TokenComma                         // 逗号分隔符 ','
+	TokenColon                         // 冒号分隔符 ':'
+	TokenQuote                         // 引号 '"'
+	TokenWhitespace                    // 空白字符
 )
 
 // container 表示JSON中的容器结构（对象或数组）
@@ -92,14 +92,14 @@ const (
 // 包含当前处理的字符、事件类型和JSON路径
 type event struct {
 	Char rune      `json:"char"` // 当前处理的字符
-	Type EventType `json:"type"` // 事件类型
+	Type TokenType `json:"type"` // 事件类型
 	Path string    `json:"path"` // JSON Pointer路径，例如：$.foo.bar, $[0].bar
 }
 
-// innerParser 是JSON流式解析器的主要结构
+// innerTokenizer 是JSON流式解析器的主要结构
 // 使用状态机模式逐个字符解析JSON
-type innerParser struct {
-	state          State       // 当前解析状态
+type innerTokenizer struct {
+	state          state       // 当前解析状态
 	stack          []container // 容器栈，用于跟踪嵌套结构
 	buffer         []rune      // 临时缓冲区，用于累积字符
 	escapeNext     bool        // 标记下一个字符是否为转义字符
@@ -107,16 +107,16 @@ type innerParser struct {
 	pathCacheDirty bool        // 标记路径缓存是否需要更新
 }
 
-// newInnerParser 创建一个新的JSON解析器实例
-func newInnerParser() *innerParser {
-	return &innerParser{
+// newInnerTokenizer 创建一个新的JSON解析器实例
+func newInnerTokenizer() *innerTokenizer {
+	return &innerTokenizer{
 		state: stateIdle,
 	}
 }
 
 // Push 将单个字符推送到解析器中
 // 返回一个事件，如果当前字符不产生事件则返回nil
-func (p *innerParser) Push(r rune) event {
+func (p *innerTokenizer) Push(r rune) event {
 	var event event
 
 	// 根据当前状态处理字符
@@ -136,22 +136,22 @@ func (p *innerParser) Push(r rune) event {
 	return event
 }
 
-func (p *innerParser) resetState() {
+func (p *innerTokenizer) resetState() {
 	p.state = stateIdle
 }
 
-func (p *innerParser) resetBuffer() {
+func (p *innerTokenizer) resetBuffer() {
 	p.buffer = p.buffer[:0]
 }
 
-func (p *innerParser) popStack() {
+func (p *innerTokenizer) popStack() {
 	if len(p.stack) > 0 {
 		p.stack = p.stack[:len(p.stack)-1]
 		p.pathCacheDirty = true
 	}
 }
 
-func (p *innerParser) peekStack() *container {
+func (p *innerTokenizer) peekStack() *container {
 	if len(p.stack) == 0 {
 		return nil
 	}
@@ -159,18 +159,18 @@ func (p *innerParser) peekStack() *container {
 	return &p.stack[len(p.stack)-1]
 }
 
-func (p *innerParser) pushStack(c container) {
+func (p *innerTokenizer) pushStack(c container) {
 	p.stack = append(p.stack, c)
 	p.pathCacheDirty = true
 }
 
-func (p *innerParser) handleIdleState(r rune) event {
+func (p *innerTokenizer) handleIdleState(r rune) event {
 	switch r {
 	case '{':
 		p.pushStack(container{Type: containerTypeObject})
 		return event{
 			Char: r,
-			Type: EventObjectStart,
+			Type: TokenObjectStart,
 			Path: p.buildPath(),
 		}
 	case '}':
@@ -179,7 +179,7 @@ func (p *innerParser) handleIdleState(r rune) event {
 		p.resetBuffer()
 		return event{
 			Char: r,
-			Type: EventObjectEnd,
+			Type: TokenObjectEnd,
 			Path: p.buildPath(),
 		}
 	case '[':
@@ -187,7 +187,7 @@ func (p *innerParser) handleIdleState(r rune) event {
 		p.pushStack(container{Type: containerTypeArray})
 		return event{
 			Char: r,
-			Type: EventArrayStart,
+			Type: TokenArrayStart,
 			Path: path,
 		}
 	case ']':
@@ -196,7 +196,7 @@ func (p *innerParser) handleIdleState(r rune) event {
 		p.popStack()
 		return event{
 			Char: r,
-			Type: EventArrayEnd,
+			Type: TokenArrayEnd,
 			Path: p.buildPath(),
 		}
 	case '"':
@@ -208,7 +208,7 @@ func (p *innerParser) handleIdleState(r rune) event {
 		}
 		return event{
 			Char: r,
-			Type: EventQuote,
+			Type: TokenQuote,
 			Path: p.buildPath(),
 		}
 	case ':':
@@ -216,7 +216,7 @@ func (p *innerParser) handleIdleState(r rune) event {
 		p.resetBuffer()
 		return event{
 			Char: r,
-			Type: EventColon,
+			Type: TokenColon,
 			Path: p.buildPath(),
 		}
 	case ',':
@@ -229,13 +229,13 @@ func (p *innerParser) handleIdleState(r rune) event {
 		}
 		return event{
 			Char: r,
-			Type: EventComma,
+			Type: TokenComma,
 			Path: p.buildPath(),
 		}
 	case ' ', '\t', '\n', '\r':
 		return event{
 			Char: r,
-			Type: EventWhitespace,
+			Type: TokenWhitespace,
 			Path: p.buildPath(),
 		}
 	default:
@@ -243,15 +243,15 @@ func (p *innerParser) handleIdleState(r rune) event {
 	}
 }
 
-func (p *innerParser) handleStrState(r rune, isKey bool) event {
+func (p *innerTokenizer) handleStrState(r rune, isKey bool) event {
 	if p.escapeNext {
 		p.escapeNext = false
 		p.buffer = append(p.buffer, r)
-		var eventType EventType
+		var eventType TokenType
 		if isKey {
-			eventType = EventKey
+			eventType = TokenKey
 		} else {
-			eventType = EventString
+			eventType = TokenString
 		}
 		return event{
 			Char: r,
@@ -269,7 +269,7 @@ func (p *innerParser) handleStrState(r rune, isKey bool) event {
 		p.resetState()
 		return event{
 			Char: r,
-			Type: EventQuote,
+			Type: TokenQuote,
 			Path: path,
 		}
 	case '\\':
@@ -279,9 +279,9 @@ func (p *innerParser) handleStrState(r rune, isKey bool) event {
 		} else {
 			p.escapeNext = true
 		}
-		et := EventStringEscape
+		et := TokenStringEscape
 		if isKey {
-			et = EventKeyEscape
+			et = TokenKeyEscape
 		}
 		return event{
 			Char: r,
@@ -290,11 +290,11 @@ func (p *innerParser) handleStrState(r rune, isKey bool) event {
 		}
 	default:
 		p.buffer = append(p.buffer, r)
-		var eventType EventType
+		var eventType TokenType
 		if isKey {
-			eventType = EventKey
+			eventType = TokenKey
 		} else {
-			eventType = EventString
+			eventType = TokenString
 		}
 		return event{
 			Char: r,
@@ -304,12 +304,12 @@ func (p *innerParser) handleStrState(r rune, isKey bool) event {
 	}
 }
 
-func (p *innerParser) handleNumberState(r rune) event {
+func (p *innerTokenizer) handleNumberState(r rune) event {
 	if isDigit(r) || r == '.' || r == 'e' || r == 'E' || r == '+' || r == '-' {
 		p.buffer = append(p.buffer, r)
 		return event{
 			Char: r,
-			Type: EventNumber,
+			Type: TokenNumber,
 			Path: p.getPathCache(),
 		}
 	}
@@ -319,18 +319,18 @@ func (p *innerParser) handleNumberState(r rune) event {
 	return p.handleIdleState(r)
 }
 
-func (p *innerParser) handleKeywordState(r rune) event {
+func (p *innerTokenizer) handleKeywordState(r rune) event {
 	if isKeywordChar(r) {
 		p.buffer = append(p.buffer, r)
-		var eventType EventType
+		var eventType TokenType
 		switch p.state {
 		case stateBoolean:
-			eventType = EventBoolean
+			eventType = TokenBoolean
 		case stateNull:
-			eventType = EventNull
+			eventType = TokenNull
 		case stateNumber, stateString, stateKey, stateIdle:
 			// These states should not occur in keyword state, but handle exhaustively
-			eventType = EventUnknown
+			eventType = TokenUnknown
 		}
 		return event{
 			Char: r,
@@ -345,7 +345,7 @@ func (p *innerParser) handleKeywordState(r rune) event {
 	return p.handleIdleState(r)
 }
 
-func (p *innerParser) handleValueStart(r rune) event {
+func (p *innerTokenizer) handleValueStart(r rune) event {
 	setBuffer := func(r rune) {
 		p.resetBuffer()
 		p.buffer = append(p.buffer, r)
@@ -356,7 +356,7 @@ func (p *innerParser) handleValueStart(r rune) event {
 		p.state = stateNumber
 		return event{
 			Char: r,
-			Type: EventNumber,
+			Type: TokenNumber,
 			Path: p.getPathCache(),
 		}
 	case r == 't':
@@ -364,7 +364,7 @@ func (p *innerParser) handleValueStart(r rune) event {
 		p.state = stateBoolean
 		return event{
 			Char: r,
-			Type: EventBoolean,
+			Type: TokenBoolean,
 			Path: p.getPathCache(),
 		}
 	case r == 'f':
@@ -372,7 +372,7 @@ func (p *innerParser) handleValueStart(r rune) event {
 		p.state = stateBoolean
 		return event{
 			Char: r,
-			Type: EventBoolean,
+			Type: TokenBoolean,
 			Path: p.getPathCache(),
 		}
 	case r == 'n':
@@ -380,20 +380,20 @@ func (p *innerParser) handleValueStart(r rune) event {
 		p.state = stateNull
 		return event{
 			Char: r,
-			Type: EventNull,
+			Type: TokenNull,
 			Path: p.getPathCache(),
 		}
 	default:
 		// should not happen, but handle gracefully
 		return event{
 			Char: r,
-			Type: EventUnknown,
+			Type: TokenUnknown,
 			Path: p.getPathCache(),
 		}
 	}
 }
 
-func (p *innerParser) getPathCache() string {
+func (p *innerTokenizer) getPathCache() string {
 	if !p.pathCacheDirty {
 		return p.pathCache
 	}
@@ -404,7 +404,7 @@ func (p *innerParser) getPathCache() string {
 
 // buildPath 根据当前的容器栈构建JSON路径
 // 例如：$.foo.bar[0].baz
-func (p *innerParser) buildPath() string {
+func (p *innerTokenizer) buildPath() string {
 	if len(p.stack) == 0 {
 		return "$"
 	}
@@ -434,36 +434,36 @@ func isKeywordChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
-// Parser is a parser for JSON streams.
-type Parser struct {
+// Tokenizer is a parser for JSON streams.
+type Tokenizer struct {
 	buf        []rune
-	inner      *innerParser
+	inner      *innerTokenizer
 	autoEscape bool
 	escaping   bool // Whether to escape strings automatically
 }
 
-// NewParser creates a new Parser instance.
-func NewParser() *Parser {
-	return &Parser{
+// NewTokenizer creates a new Parser instance.
+func NewTokenizer() *Tokenizer {
+	return &Tokenizer{
 		buf:   make([]rune, 0, 8),
-		inner: newInnerParser(),
+		inner: newInnerTokenizer(),
 	}
 }
 
 // AutoEscape enables automatic escaping of string values.
-func (p *Parser) AutoEscape() {
+func (p *Tokenizer) AutoEscape() {
 	p.autoEscape = true
 }
 
-// Event represents a JSON event produced by the parser.
-type Event struct {
+// Token represents a JSON event produced by the parser.
+type Token struct {
 	Val  string    // The string value of the event
-	Type EventType // The type of the event
+	Type TokenType // The type of the event
 	Path string    // The JSON Pointer path of the event
 }
 
-func fromInnerEvent(e event) *Event {
-	return &Event{
+func fromInnerToken(e event) *Token {
+	return &Token{
 		Val:  string(e.Char),
 		Type: e.Type,
 		Path: e.Path,
@@ -471,19 +471,19 @@ func fromInnerEvent(e event) *Event {
 }
 
 // Push adds a rune to the parser's buffer and processes it through the inner parser.
-func (p *Parser) Push(r rune) *Event {
+func (p *Tokenizer) Push(r rune) *Token {
 	e := p.inner.Push(r)
 	if !p.autoEscape {
-		return fromInnerEvent(e)
+		return fromInnerToken(e)
 	}
 
-	if e.Type == EventStringEscape {
+	if e.Type == TokenStringEscape {
 		p.escaping = true
 		p.buf = append(p.buf, r)
 		return nil
 	}
 
-	if e.Type == EventString && p.escaping {
+	if e.Type == TokenString && p.escaping {
 		p.buf = append(p.buf, r)
 		unescaped, err := strconv.Unquote(`"` + string(p.buf) + `"`)
 		if err != nil {
@@ -491,11 +491,11 @@ func (p *Parser) Push(r rune) *Event {
 		}
 		p.escaping = false
 		p.buf = p.buf[:0] // Clear the buffer after unescaping
-		return &Event{
+		return &Token{
 			Val:  unescaped,
 			Type: e.Type,
 			Path: e.Path,
 		}
 	}
-	return fromInnerEvent(e)
+	return fromInnerToken(e)
 }

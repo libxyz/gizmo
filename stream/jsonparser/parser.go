@@ -4,6 +4,7 @@ package jsonparser
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -87,17 +88,17 @@ const (
 	containerTypeArray
 )
 
-// Event 表示解析过程中的一个事件
+// event 表示解析过程中的一个事件
 // 包含当前处理的字符、事件类型和JSON路径
-type Event struct {
+type event struct {
 	Char rune      `json:"char"` // 当前处理的字符
 	Type EventType `json:"type"` // 事件类型
 	Path string    `json:"path"` // JSON Pointer路径，例如：$.foo.bar, $[0].bar
 }
 
-// Parser 是JSON流式解析器的主要结构
+// innerParser 是JSON流式解析器的主要结构
 // 使用状态机模式逐个字符解析JSON
-type Parser struct {
+type innerParser struct {
 	state          State       // 当前解析状态
 	stack          []container // 容器栈，用于跟踪嵌套结构
 	buffer         []rune      // 临时缓冲区，用于累积字符
@@ -106,17 +107,17 @@ type Parser struct {
 	pathCacheDirty bool        // 标记路径缓存是否需要更新
 }
 
-// NewParser 创建一个新的JSON解析器实例
-func NewParser() *Parser {
-	return &Parser{
+// newInnerParser 创建一个新的JSON解析器实例
+func newInnerParser() *innerParser {
+	return &innerParser{
 		state: stateIdle,
 	}
 }
 
 // Push 将单个字符推送到解析器中
 // 返回一个事件，如果当前字符不产生事件则返回nil
-func (p *Parser) Push(r rune) Event {
-	var event Event
+func (p *innerParser) Push(r rune) event {
+	var event event
 
 	// 根据当前状态处理字符
 	switch p.state {
@@ -135,22 +136,22 @@ func (p *Parser) Push(r rune) Event {
 	return event
 }
 
-func (p *Parser) resetState() {
+func (p *innerParser) resetState() {
 	p.state = stateIdle
 }
 
-func (p *Parser) resetBuffer() {
+func (p *innerParser) resetBuffer() {
 	p.buffer = p.buffer[:0]
 }
 
-func (p *Parser) popStack() {
+func (p *innerParser) popStack() {
 	if len(p.stack) > 0 {
 		p.stack = p.stack[:len(p.stack)-1]
 		p.pathCacheDirty = true
 	}
 }
 
-func (p *Parser) peekStack() *container {
+func (p *innerParser) peekStack() *container {
 	if len(p.stack) == 0 {
 		return nil
 	}
@@ -158,16 +159,16 @@ func (p *Parser) peekStack() *container {
 	return &p.stack[len(p.stack)-1]
 }
 
-func (p *Parser) pushStack(c container) {
+func (p *innerParser) pushStack(c container) {
 	p.stack = append(p.stack, c)
 	p.pathCacheDirty = true
 }
 
-func (p *Parser) handleIdleState(r rune) Event {
+func (p *innerParser) handleIdleState(r rune) event {
 	switch r {
 	case '{':
 		p.pushStack(container{Type: containerTypeObject})
-		return Event{
+		return event{
 			Char: r,
 			Type: EventObjectStart,
 			Path: p.buildPath(),
@@ -176,7 +177,7 @@ func (p *Parser) handleIdleState(r rune) Event {
 		p.popStack()
 		p.resetState()
 		p.resetBuffer()
-		return Event{
+		return event{
 			Char: r,
 			Type: EventObjectEnd,
 			Path: p.buildPath(),
@@ -184,7 +185,7 @@ func (p *Parser) handleIdleState(r rune) Event {
 	case '[':
 		path := p.buildPath()
 		p.pushStack(container{Type: containerTypeArray})
-		return Event{
+		return event{
 			Char: r,
 			Type: EventArrayStart,
 			Path: path,
@@ -193,7 +194,7 @@ func (p *Parser) handleIdleState(r rune) Event {
 		p.resetState()
 		p.resetBuffer()
 		p.popStack()
-		return Event{
+		return event{
 			Char: r,
 			Type: EventArrayEnd,
 			Path: p.buildPath(),
@@ -205,7 +206,7 @@ func (p *Parser) handleIdleState(r rune) Event {
 		} else {
 			p.state = stateString
 		}
-		return Event{
+		return event{
 			Char: r,
 			Type: EventQuote,
 			Path: p.buildPath(),
@@ -213,7 +214,7 @@ func (p *Parser) handleIdleState(r rune) Event {
 	case ':':
 		p.resetState()
 		p.resetBuffer()
-		return Event{
+		return event{
 			Char: r,
 			Type: EventColon,
 			Path: p.buildPath(),
@@ -226,13 +227,13 @@ func (p *Parser) handleIdleState(r rune) Event {
 		} else if p.peekStack().IsObject() {
 			p.peekStack().Key = ""
 		}
-		return Event{
+		return event{
 			Char: r,
 			Type: EventComma,
 			Path: p.buildPath(),
 		}
 	case ' ', '\t', '\n', '\r':
-		return Event{
+		return event{
 			Char: r,
 			Type: EventWhitespace,
 			Path: p.buildPath(),
@@ -242,7 +243,7 @@ func (p *Parser) handleIdleState(r rune) Event {
 	}
 }
 
-func (p *Parser) handleStrState(r rune, isKey bool) Event {
+func (p *innerParser) handleStrState(r rune, isKey bool) event {
 	if p.escapeNext {
 		p.escapeNext = false
 		p.buffer = append(p.buffer, r)
@@ -252,7 +253,7 @@ func (p *Parser) handleStrState(r rune, isKey bool) Event {
 		} else {
 			eventType = EventString
 		}
-		return Event{
+		return event{
 			Char: r,
 			Type: eventType,
 			Path: p.getPathCache(),
@@ -266,7 +267,7 @@ func (p *Parser) handleStrState(r rune, isKey bool) Event {
 			p.peekStack().SetKey(string(p.buffer))
 		}
 		p.resetState()
-		return Event{
+		return event{
 			Char: r,
 			Type: EventQuote,
 			Path: path,
@@ -282,7 +283,7 @@ func (p *Parser) handleStrState(r rune, isKey bool) Event {
 		if isKey {
 			et = EventKeyEscape
 		}
-		return Event{
+		return event{
 			Char: r,
 			Type: et,
 			Path: p.getPathCache(),
@@ -295,7 +296,7 @@ func (p *Parser) handleStrState(r rune, isKey bool) Event {
 		} else {
 			eventType = EventString
 		}
-		return Event{
+		return event{
 			Char: r,
 			Type: eventType,
 			Path: p.getPathCache(),
@@ -303,10 +304,10 @@ func (p *Parser) handleStrState(r rune, isKey bool) Event {
 	}
 }
 
-func (p *Parser) handleNumberState(r rune) Event {
+func (p *innerParser) handleNumberState(r rune) event {
 	if isDigit(r) || r == '.' || r == 'e' || r == 'E' || r == '+' || r == '-' {
 		p.buffer = append(p.buffer, r)
-		return Event{
+		return event{
 			Char: r,
 			Type: EventNumber,
 			Path: p.getPathCache(),
@@ -318,7 +319,7 @@ func (p *Parser) handleNumberState(r rune) Event {
 	return p.handleIdleState(r)
 }
 
-func (p *Parser) handleKeywordState(r rune) Event {
+func (p *innerParser) handleKeywordState(r rune) event {
 	if isKeywordChar(r) {
 		p.buffer = append(p.buffer, r)
 		var eventType EventType
@@ -331,7 +332,7 @@ func (p *Parser) handleKeywordState(r rune) Event {
 			// These states should not occur in keyword state, but handle exhaustively
 			eventType = EventUnknown
 		}
-		return Event{
+		return event{
 			Char: r,
 			Type: eventType,
 			Path: p.getPathCache(),
@@ -344,7 +345,7 @@ func (p *Parser) handleKeywordState(r rune) Event {
 	return p.handleIdleState(r)
 }
 
-func (p *Parser) handleValueStart(r rune) Event {
+func (p *innerParser) handleValueStart(r rune) event {
 	setBuffer := func(r rune) {
 		p.resetBuffer()
 		p.buffer = append(p.buffer, r)
@@ -353,7 +354,7 @@ func (p *Parser) handleValueStart(r rune) Event {
 	case isDigit(r) || r == '-':
 		setBuffer(r)
 		p.state = stateNumber
-		return Event{
+		return event{
 			Char: r,
 			Type: EventNumber,
 			Path: p.getPathCache(),
@@ -361,7 +362,7 @@ func (p *Parser) handleValueStart(r rune) Event {
 	case r == 't':
 		setBuffer(r)
 		p.state = stateBoolean
-		return Event{
+		return event{
 			Char: r,
 			Type: EventBoolean,
 			Path: p.getPathCache(),
@@ -369,7 +370,7 @@ func (p *Parser) handleValueStart(r rune) Event {
 	case r == 'f':
 		setBuffer(r)
 		p.state = stateBoolean
-		return Event{
+		return event{
 			Char: r,
 			Type: EventBoolean,
 			Path: p.getPathCache(),
@@ -377,14 +378,14 @@ func (p *Parser) handleValueStart(r rune) Event {
 	case r == 'n':
 		setBuffer(r)
 		p.state = stateNull
-		return Event{
+		return event{
 			Char: r,
 			Type: EventNull,
 			Path: p.getPathCache(),
 		}
 	default:
 		// should not happen, but handle gracefully
-		return Event{
+		return event{
 			Char: r,
 			Type: EventUnknown,
 			Path: p.getPathCache(),
@@ -392,7 +393,7 @@ func (p *Parser) handleValueStart(r rune) Event {
 	}
 }
 
-func (p *Parser) getPathCache() string {
+func (p *innerParser) getPathCache() string {
 	if !p.pathCacheDirty {
 		return p.pathCache
 	}
@@ -403,7 +404,7 @@ func (p *Parser) getPathCache() string {
 
 // buildPath 根据当前的容器栈构建JSON路径
 // 例如：$.foo.bar[0].baz
-func (p *Parser) buildPath() string {
+func (p *innerParser) buildPath() string {
 	if len(p.stack) == 0 {
 		return "$"
 	}
@@ -431,4 +432,70 @@ func isDigit(r rune) bool {
 // isKeywordChar 检查字符是否为关键字字符（字母）
 func isKeywordChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+}
+
+// Parser is a parser for JSON streams.
+type Parser struct {
+	buf        []rune
+	inner      *innerParser
+	autoEscape bool
+	escaping   bool // Whether to escape strings automatically
+}
+
+// NewParser creates a new Parser instance.
+func NewParser() *Parser {
+	return &Parser{
+		buf:   make([]rune, 0, 8),
+		inner: newInnerParser(),
+	}
+}
+
+// AutoEscape enables automatic escaping of string values.
+func (p *Parser) AutoEscape() {
+	p.autoEscape = true
+}
+
+// Event represents a JSON event produced by the parser.
+type Event struct {
+	Val  string    // The string value of the event
+	Type EventType // The type of the event
+	Path string    // The JSON Pointer path of the event
+}
+
+func fromInnerEvent(e event) *Event {
+	return &Event{
+		Val:  string(e.Char),
+		Type: e.Type,
+		Path: e.Path,
+	}
+}
+
+// Push adds a rune to the parser's buffer and processes it through the inner parser.
+func (p *Parser) Push(r rune) *Event {
+	e := p.inner.Push(r)
+	if !p.autoEscape {
+		return fromInnerEvent(e)
+	}
+
+	if e.Type == EventStringEscape {
+		p.escaping = true
+		p.buf = append(p.buf, r)
+		return nil
+	}
+
+	if e.Type == EventString && p.escaping {
+		p.buf = append(p.buf, r)
+		unescaped, err := strconv.Unquote(`"` + string(p.buf) + `"`)
+		if err != nil {
+			return nil
+		}
+		p.escaping = false
+		p.buf = p.buf[:0] // Clear the buffer after unescaping
+		return &Event{
+			Val:  unescaped,
+			Type: e.Type,
+			Path: e.Path,
+		}
+	}
+	return fromInnerEvent(e)
 }

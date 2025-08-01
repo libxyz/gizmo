@@ -11,16 +11,16 @@ import (
 // TestParser_Simple 测试基本的JSON解析功能
 // 包括字符串、数字、转义字符等基础类型
 func TestParser_Simple(t *testing.T) {
-	parser := NewParser()
+	parser := newInnerParser()
 	json := `{"a":"te\n\"st", "b":42}`
 
-	events := []Event{}
+	events := []event{}
 	for _, r := range json {
 		event := parser.Push(r)
 		events = append(events, event)
 	}
 
-	expectedEvents := []Event{
+	expectedEvents := []event{
 		{Type: EventObjectStart, Path: "$", Char: '{'},
 		{Type: EventQuote, Path: "$", Char: '"'},
 		{Type: EventKey, Path: "$", Char: 'a'},
@@ -62,16 +62,16 @@ func TestParser_Simple(t *testing.T) {
 // TestPaser_Complex 测试复杂的嵌套JSON结构
 // 包括嵌套对象、数组、混合类型等
 func TestPaser_Complex(t *testing.T) {
-	parser := NewParser()
+	parser := newInnerParser()
 	json := `{"a":{"b":[1,2,"3"],"c":true,"d":{"e":null}},"fake":-1.1}`
 
-	events := []Event{}
+	events := []event{}
 	for _, r := range json {
 		event := parser.Push(r)
 		events = append(events, event)
 	}
 
-	expectedEvents := []Event{
+	expectedEvents := []event{
 		{Type: EventObjectStart, Path: "$", Char: '{'},
 		{Type: EventQuote, Path: "$", Char: '"'},
 		{Type: EventKey, Path: "$", Char: 'a'},
@@ -146,11 +146,11 @@ func TestPaser_Complex(t *testing.T) {
 // TestParser_EscapedWhitespace 测试转义空白字符的处理
 // 包括制表符、换行符、回车符等
 func TestParser_EscapedWhitespace(t *testing.T) {
-	parser := NewParser()
+	parser := newInnerParser()
 	// Test various escaped whitespace characters
 	json := `{"tab":"te\t","newline":"li\nne","return":"car\r","backspace":"bs\b","formfeed":"ff\f"}`
 
-	events := []Event{}
+	events := []event{}
 	for _, r := range json {
 		event := parser.Push(r)
 		events = append(events, event)
@@ -166,11 +166,11 @@ func TestParser_EscapedWhitespace(t *testing.T) {
 // TestParser_MixedEscapedWhitespace 测试混合转义空白字符的处理
 // 包括嵌套结构中的转义字符
 func TestParser_MixedEscapedWhitespace(t *testing.T) {
-	parser := NewParser()
+	parser := newInnerParser()
 	// Test complex string with multiple escaped whitespace characters
 	json := `{"mixed":"\t\n\r\b\f","nested":{"inner":"text\twith\nnewlines"}}`
 
-	events := []Event{}
+	events := []event{}
 	for _, r := range json {
 		event := parser.Push(r)
 		events = append(events, event)
@@ -186,11 +186,11 @@ func TestParser_MixedEscapedWhitespace(t *testing.T) {
 // TestParser_StringWithUnicodeEscapes 测试Unicode转义序列的处理
 // 包括\uXXXX格式的Unicode字符
 func TestParser_StringWithUnicodeEscapes(t *testing.T) {
-	parser := NewParser()
+	parser := newInnerParser()
 	// Test string with Unicode escape sequences (common in JSON)
 	json := `{"unicode":"\u0041\u0042\u0043","with_spaces" : "text\t\nmore"}`
 
-	events := []Event{}
+	events := []event{}
 	for _, r := range json {
 		event := parser.Push(r)
 		events = append(events, event)
@@ -206,11 +206,11 @@ func TestParser_StringWithUnicodeEscapes(t *testing.T) {
 // TestParser_KeyEscapes 测试键名中转义字符的处理
 // 包括键名和值中的转义字符
 func TestParser_KeyEscapes(t *testing.T) {
-	parser := NewParser()
+	parser := newInnerParser()
 	// Test string with Unicode escape sequences (common in JSON)
 	json := `{"key_with_e\n\"":"value_with_escape\u0041"}`
 
-	events := []Event{}
+	events := []event{}
 	for _, r := range json {
 		event := parser.Push(r)
 		events = append(events, event)
@@ -221,4 +221,49 @@ func TestParser_KeyEscapes(t *testing.T) {
 		accumulatedJSON.WriteRune(event.Char)
 	}
 	require.Equal(t, json, accumulatedJSON.String(), "Accumulated JSON does not match original with Unicode escapes")
+}
+
+func TestParser_AutoEscape(t *testing.T) {
+	parser := NewParser()
+	parser.AutoEscape()
+	json := `{"a":"te\n\"\u0028st", "b":42}`
+
+	events := []Event{}
+	for _, r := range json {
+		event := parser.Push(r)
+		t.Logf("Pushed rune: %c, Event: %+v", r, event)
+		if event != nil {
+			events = append(events, *event)
+		}
+	}
+
+	expectedEvents := []Event{
+		{Type: EventObjectStart, Path: "$", Val: "{"},
+		{Type: EventQuote, Path: "$", Val: "\""},
+		{Type: EventKey, Path: "$", Val: "a"},
+		{Type: EventQuote, Path: "$", Val: "\""},
+		{Type: EventColon, Path: "$.a", Val: ":"},
+		{Type: EventQuote, Path: "$.a", Val: "\""},
+		{Type: EventString, Path: "$.a", Val: "t"},
+		{Type: EventString, Path: "$.a", Val: "e"},
+		{Type: EventString, Path: "$.a", Val: "\n"},
+		{Type: EventString, Path: "$.a", Val: "\""},
+		{Type: EventString, Path: "$.a", Val: "("},
+		{Type: EventString, Path: "$.a", Val: "s"},
+		{Type: EventString, Path: "$.a", Val: "t"},
+		{Type: EventQuote, Path: "$.a", Val: "\""},
+		{Type: EventComma, Path: "$", Val: ","},
+		{Type: EventWhitespace, Path: "$", Val: " "},
+		{Type: EventQuote, Path: "$", Val: "\""},
+		{Type: EventKey, Path: "$", Val: "b"},
+		{Type: EventQuote, Path: "$", Val: "\""},
+		{Type: EventColon, Path: "$.b", Val: ":"},
+		{Type: EventNumber, Path: "$.b", Val: "4"},
+		{Type: EventNumber, Path: "$.b", Val: "2"},
+		{Type: EventObjectEnd, Path: "$", Val: "}"},
+	}
+
+	for i, event := range events {
+		assert.Equal(t, expectedEvents[i], event, "Event at index %d does not match expected", i)
+	}
 }

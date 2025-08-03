@@ -267,3 +267,19 @@ func TestParser_AutoEscape(t *testing.T) {
 		assert.Equal(t, expectedEvents[i], event, "Event at index %d does not match expected", i)
 	}
 }
+
+func TestNestedCatch(t *testing.T) {
+	json := `{"users":[{"id":1,"profile":{"name":"张三"}},{"id":2,"profile":{"name":"李四"}}]}`
+	z := NewTokenizer()
+
+	nameBuilder := strings.Builder{}
+	for _, r := range json {
+		if tk := z.Push(r); tk != nil {
+			if tk.Path == "$.users[1].profile.name" &&
+				(tk.Type == TokenString || tk.Type == TokenStringEscape) {
+				nameBuilder.WriteString(tk.Val)
+			}
+		}
+	}
+	assert.Equal(t, "李四", nameBuilder.String())
+}

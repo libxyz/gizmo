@@ -1,22 +1,22 @@
 # This workflow will build a golang project
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
 
-name: stream pkg CI
+name: parsing pkg CI
 
 on:
   push:
     branches: [ "main" ]
     paths:
-      - 'stream/**'
-      - '.github/workflows/stream.yml'
+      - 'parsing/**'
+      - '.github/workflows/parsing.yml'
   pull_request:
     branches: [ "main" ]
     paths:
-      - 'stream/**'
-      - '.github/workflows/stream.yml'
+      - 'parsing/**'
+      - '.github/workflows/parsing.yml'
 
 env:
-  WORKING_DIRECTORY: ./stream
+  WORKING_DIRECTORY: ./parsing
 
 jobs:
   build:

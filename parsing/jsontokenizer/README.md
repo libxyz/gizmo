@@ -18,7 +18,7 @@ package main
 import (
     "fmt"
     "strings"
-    "github.com/Crescent617/x/stream/jsontokenizer"
+    "github.com/Crescent617/x/parsing/jsontokenizer"
 )
 
 func main() {
@@ -79,7 +79,7 @@ func main() {
 ### 基本对象解析
 
 ```go
-import "github.com/Crescent617/x/stream/jsontokenizer"
+import "github.com/Crescent617/x/parsing/jsontokenizer"
 
 json := `{"name":"张三","age":30,"active":true}`
 t := jsontokenizer.NewTokenizer()
@@ -95,7 +95,7 @@ for _, r := range json {
 ### 数组处理
 
 ```go
-import "github.com/Crescent617/x/stream/jsontokenizer"
+import "github.com/Crescent617/x/parsing/jsontokenizer"
 
 json := `[1,2,3,{"name":"测试"}]`
 t := jsontokenizer.NewTokenizer()

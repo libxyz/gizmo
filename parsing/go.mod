@@ -1,4 +1,4 @@
-module github.com/Crescent617/x/parsing
+module github.com/libxyz/gizmo/parsing
 
 go 1.24
 

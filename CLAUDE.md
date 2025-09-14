@@ -8,7 +8,6 @@ This is a Go workspace containing a streaming JSON parser library. The core func
 
 ## Architecture
 
-**Main Package**: `github.com/Crescent617/x/stream/jsontokenizer`
 - **State Machine Design**: Uses a finite state machine (`State` enum) to process JSON character by character
 - **Event System**: Generates detailed events for each character with JSON path tracking (JSON Pointer format)
 - **Container Stack**: Tracks nested structures (objects/arrays) using a container stack
